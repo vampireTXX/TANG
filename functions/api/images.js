@@ -1,6 +1,7 @@
 /**
  * GET /api/images
- * 通过 Cloudflare KV REST API 列出已上传的图片（最新在前）。
+ * 通过 Cloudflare KV 列出已上传图片（最新在前）。
+ * 兼容两种键：meta:<id>（新，含 store 字段）、img:<id>（旧，整图 base64）。
  * 凭据取自环境变量 env.CF_KV_TOKEN。
  */
 const ACCT = "15e7bfc2475d3ac5e82b087b43b86aa9";
@@ -11,19 +12,40 @@ export async function onRequestGet({ env }) {
   const token = env.CF_KV_TOKEN;
   if (!token) return Response.json({ ok: false, error: "服务端未配置 KV 凭据" }, { status: 500 });
   try {
-    const r = await fetch(`${KV}/keys?prefix=img:`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!r.ok) return Response.json({ ok: false, error: "KV 读取失败(" + r.status + ")" }, { status: 500 });
-    const data = await r.json();
-    const keys = (data.result || []).map((k) => k.name);
     const items = [];
-    for (const key of keys) {
-      const id = key.slice(4); // 去掉 "img:" 前缀
-      const g = await fetch(`${KV}/values/${key}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!g.ok) continue;
-      let meta = {};
-      try { meta = await g.json(); } catch (e) {}
+    const seen = new Set();
+    const addFromMeta = (key, meta) => {
+      const id = key.slice(key.indexOf(":") + 1);
+      if (seen.has(id)) return;
+      seen.add(id);
       items.push({ id, name: meta.n || id, cat: meta.c || "投稿", url: "/api/asset/" + id });
+    };
+
+    // 新索引：meta:<id>
+    const rm = await fetch(`${KV}/keys?prefix=meta:`, { headers: { Authorization: `Bearer ${token}` } });
+    if (rm.ok) {
+      const dm = await rm.json();
+      for (const k of dm.result || []) {
+        const g = await fetch(`${KV}/values/${k.name}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!g.ok) continue;
+        let meta = {};
+        try { meta = await g.json(); } catch (e) {}
+        addFromMeta(k.name, meta);
+      }
     }
+    // 旧记录兼容：img:<id>
+    const ri = await fetch(`${KV}/keys?prefix=img:`, { headers: { Authorization: `Bearer ${token}` } });
+    if (ri.ok) {
+      const di = await ri.json();
+      for (const k of di.result || []) {
+        const g = await fetch(`${KV}/values/${k.name}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!g.ok) continue;
+        let meta = {};
+        try { meta = await g.json(); } catch (e) {}
+        addFromMeta(k.name, meta);
+      }
+    }
+
     items.sort((a, b) => String(b.id).localeCompare(String(a.id)));
     return Response.json(items);
   } catch (e) {
