@@ -17,6 +17,9 @@
   <!-- 全局像素颗粒 / 网格叠层 -->
   <div class="grain" aria-hidden="true"></div>
 
+  <!-- 鼠标跟随像素粒子层（散发式波动） -->
+  <canvas id="fxCanvas" class="fx-canvas" aria-hidden="true"></canvas>
+
   <!-- 顶部导航 -->
   <header class="nav">
     <a class="nav__brand" href="#top" aria-label="PIXEL DROP 首页">
@@ -58,6 +61,7 @@
           <button class="chip" data-filter="城市" role="tab" aria-selected="false">城市</button>
           <button class="chip" data-filter="人物" role="tab" aria-selected="false">人物</button>
           <button class="chip" data-filter="抽象" role="tab" aria-selected="false">抽象</button>
+          <button class="chip" data-filter="投稿" role="tab" aria-selected="false">投稿</button>
         </div>
       </div>
       <div class="grid" id="grid" aria-live="polite"></div>
@@ -77,7 +81,8 @@
           <p class="dropzone__hint">支持多张 · 本地预览 · 自动像素化（演示，不持久化）</p>
         </div>
       </div>
-      <p class="note">提示：本站为纯静态演示，投稿图片仅在当前浏览器内展示，不会真正上传服务器。如需持久化请接入后端或对象存储。</p>
+      <p class="note">本站已接入真实后端（Cloudflare R2 对象存储），投稿图片会真实持久化，刷新后仍可见。</p>
+      <p class="note" id="uploadStatus" hidden></p>
     </section>
 
     <!-- 关于 -->
