@@ -102,10 +102,17 @@ export async function onRequestPost({ request, env }) {
     let nasPath = "";
 
     if (useNas) {
-      const sid = await nasLogin(cfg);
-      nasPath = await nasUpload(cfg, sid, bytes, dir, id + extOf(type));
-      store = "nas";
-    } else {
+      try {
+        const sid = await nasLogin(cfg);
+        nasPath = await nasUpload(cfg, sid, bytes, dir, id + extOf(type));
+        store = "nas";
+      } catch (e) {
+        // NAS 不可达（如被 GFW 阻断）时回退 KV，保证上传不失败
+        store = "kv";
+        nasPath = "";
+      }
+    }
+    if (store === "kv") {
       // KV 回退：整图以 base64 存储
       let bin = "";
       const chunk = 0x8000;
