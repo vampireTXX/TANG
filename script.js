@@ -1,6 +1,6 @@
 /* =========================================================
    PIXEL·DROP — 交互脚本
-   职责：模块化画廊 · 像素化 · 分类筛选 · 灯箱 · 鼠标跟随像素粒子波动 · 真实后端投稿
+   职责：模块化画廊 · 像素化 · 分类筛选 · 灯箱 · 鼠标跟随水波纹像素波动 · 真实后端投稿
    ========================================================= */
 (function () {
   "use strict";
@@ -17,11 +17,11 @@
     { src: SEED + "portraitx/800/800", cat: "人物", title: "像素肖像",   desc: "侧光下的轮廓颗粒" },
     { src: SEED + "colorcube/800/800", cat: "抽象", title: "色块构成",   desc: "随机几何的撞色练习" },
     { src: SEED + "lakeview/800/800",  cat: "风景", title: "镜面湖泊",   desc: "对称构图的静水" },
-    { src: SEED + "rooftop/800/800",   cat: "城市", title: "屋顶矩阵",   desc: "俯瞰城市的方格节奏" },
-    { src: SEED + "profiley/800/800",  cat: "人物", title: "凝视",       desc: "高对比的黑白质感" },
-    { src: SEED + "wavesoft/800/800",  cat: "抽象", title: "波纹",       desc: "流动的曲线噪声" },
-    { src: SEED + "forestp/800/800",   cat: "风景", title: "针叶林",     desc: "密集垂直的线条" },
-    { src: SEED + "gridcity/800/800",  cat: "城市", title: "立交枢纽",   desc: "交通线的交错网络" },
+    { src: SEED + "rooftop/800/800",  cat: "城市", title: "屋顶矩阵",   desc: "俯瞰城市的方格节奏" },
+    { src: SEED + "profiley/800/800", cat: "人物", title: "凝视",       desc: "高对比的黑白质感" },
+    { src: SEED + "wavesoft/800/800", cat: "抽象", title: "波纹",       desc: "流动的曲线噪声" },
+    { src: SEED + "forestp/800/800",  cat: "风景", title: "针叶林",     desc: "密集垂直的线条" },
+    { src: SEED + "gridcity/800/800", cat: "城市", title: "立交枢纽",   desc: "交通线的交错网络" },
   ];
 
   const grid = document.getElementById("grid");
@@ -68,7 +68,6 @@
     img.className = "cell__img";
     img.alt = item.title;
     img.loading = "lazy";
-    // 跨域种子图不读取像素，仅绘制，无需 crossOrigin
 
     const tag = document.createElement("span");
     tag.className = "cell__tag";
@@ -147,7 +146,7 @@
     const item = lbList[lbIndex];
     if (!item) return;
     const tmp = new Image();
-    tmp.crossOrigin = "anonymous"; // 同域后端图可直接，种子图仅绘制不读取
+    tmp.crossOrigin = "anonymous";
     tmp.onload = function () {
       pixelateInto(lbCanvas, tmp, LB_RES);
       lbImg.src = item.src;
@@ -189,19 +188,24 @@
   });
 
   /* =========================================================
-     鼠标跟随像素粒子波动（散发式）
+     鼠标跟随像素波动（柔和 · 水波纹式缓慢扩散）
      低分辨率离屏缓冲 -> 放大渲染，得到硬边像素块
+     设计：低频生成、缓慢扩散、最多数圈、软高斯环
      ========================================================= */
   (function initFX() {
     const canvas = document.getElementById("fxCanvas");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const PALETTE = ["#ff5277", "#2ce8f5", "#f9f871", "#7c5cff", "#2bff88"];
-    const GRID = 5; // 每个粒子在缓冲里的 1 单位 = GRID 个 CSS 像素
+
+    // 柔和水波色：青/蓝绿，低饱和，避免刺眼
+    const COLOR = "120,232,245";
+    const GRID = 5;            // 每个像素块 = GRID 个 CSS 像素
+    const MAX_RIPPLES = 4;     // 同时最多 4 圈，避免杂乱
+    const SPAWN_MS = 420;      // 鼠标移动时最小生成间隔（节奏舒缓）
 
     let W = 0, H = 0, bw = 0, bh = 0, buf = null, bctx = null, dpr = 1;
-    let particles = [], raf = null, lastPos = null, lastPulse = 0;
+    let ripples = [], raf = null, lastSpawn = 0;
 
     function resize() {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -214,85 +218,81 @@
       bctx = buf.getContext("2d");
     }
 
-    function spawn(x, y, opt) {
-      if (particles.length > 520) return;
-      opt = opt || {};
-      const ang = opt.angle != null ? opt.angle : Math.random() * Math.PI * 2;
-      const sp = opt.speed != null ? opt.speed : (0.7 + Math.random() * 1.9);
-      particles.push({
+    // strength：点击时略强，移动时常规
+    function spawn(x, y, strength) {
+      if (ripples.length >= MAX_RIPPLES) ripples.shift();
+      ripples.push({
         x: x / GRID, y: y / GRID,
-        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
-        life: 1, decay: 0.010 + Math.random() * 0.018,
-        size: Math.random() < 0.25 ? 2 : 1,
-        color: PALETTE[(Math.random() * PALETTE.length) | 0],
-        phase: Math.random() * 6.28,
-        wave: 0.12 + Math.random() * 0.22,
-        spin: Math.random() < 0.5 ? 1 : -1,
+        r: 1.2,
+        life: 1,
+        speed: 0.13 * (strength || 1),    // 很慢的扩散速度（缓冲单位/帧）
+        decay: 0.0040 * (strength || 1),  // 很慢的消逝（约 4s 淡出）
+        maxA: 0.5 * (strength ? 1.25 : 1),
       });
     }
 
-    // 鼠标移动：局部散射
-    function burst(x, y) {
-      if (reduce) return;
-      for (let i = 0; i < 4; i++) spawn(x + (Math.random() - 0.5) * 10, y + (Math.random() - 0.5) * 10);
-    }
-    // 周期性环向脉冲：散发式波动
-    function ring(x, y) {
-      if (reduce) return;
-      const N = 26;
-      for (let i = 0; i < N; i++) {
-        const a = (i / N) * Math.PI * 2;
-        spawn(x, y, { angle: a, speed: 1.3 + Math.random() * 1.3 });
+    // 软高斯环 + 一层更淡的内环，模拟水面波纹的层次
+    function drawRipple(rp) {
+      const sigma = 1.15;
+      const sigma2 = sigma * 0.8;
+      const r = rp.r;
+      const x0 = Math.max(0, Math.floor(rp.x - r - 4));
+      const x1 = Math.min(bw - 1, Math.ceil(rp.x + r + 4));
+      const y0 = Math.max(0, Math.floor(rp.y - r - 4));
+      const y1 = Math.min(bh - 1, Math.ceil(rp.y + r + 4));
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const dx = x - rp.x, dy = y - rp.y;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          const g =
+            0.78 * Math.exp(-((d - r) * (d - r)) / (2 * sigma * sigma)) +
+            0.22 * Math.exp(-((d - r * 0.62) * (d - r * 0.62)) / (2 * sigma2 * sigma2));
+          if (g < 0.04) continue;
+          const a = g * rp.life * rp.maxA;
+          bctx.fillStyle = "rgba(" + COLOR + "," + a.toFixed(3) + ")";
+          bctx.fillRect(x, y, 1, 1);
+        }
       }
     }
 
     function kick() { if (raf == null) raf = requestAnimationFrame(loop); }
 
-    function loop(t) {
-      if (lastPos && !reduce && t - lastPulse > 820) { ring(lastPos.x, lastPos.y); lastPulse = t; }
+    function loop() {
       bctx.clearRect(0, 0, bw, bh);
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
-        p.phase += 0.18;
-        // 波动：给速度叠加垂直方向的扰动，让粒子呈曲线散发
-        p.vx += Math.cos(p.phase) * 0.015 * p.spin;
-        p.vy += Math.sin(p.phase) * 0.015 * p.spin;
-        p.x += p.vx; p.y += p.vy;
-        p.life -= p.decay;
-        if (p.life <= 0 || p.x < -2 || p.x > bw + 2 || p.y < -2 || p.y > bh + 2) {
-          particles.splice(i, 1); continue;
-        }
-        bctx.globalAlpha = Math.max(0, p.life);
-        bctx.fillStyle = p.color;
-        bctx.fillRect(p.x | 0, p.y | 0, p.size, p.size);
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const rp = ripples[i];
+        rp.r += rp.speed;
+        rp.life -= rp.decay;
+        if (rp.life <= 0 || rp.r > Math.max(bw, bh) * 1.1) { ripples.splice(i, 1); continue; }
+        drawRipple(rp);
       }
-      bctx.globalAlpha = 1;
       ctx.clearRect(0, 0, W, H);
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(buf, 0, 0, bw, bh, 0, 0, bw * GRID, bh * GRID);
 
-      if (particles.length > 0 || (lastPos && !reduce)) raf = requestAnimationFrame(loop);
+      if (ripples.length > 0) raf = requestAnimationFrame(loop);
       else { raf = null; ctx.clearRect(0, 0, W, H); }
     }
 
     window.addEventListener("resize", resize);
     window.addEventListener("pointermove", function (e) {
-      lastPos = { x: e.clientX, y: e.clientY };
-      burst(e.clientX, e.clientY); kick();
+      if (reduce) return;
+      const now = performance.now();
+      if (now - lastSpawn > SPAWN_MS) { spawn(e.clientX, e.clientY, 1); lastSpawn = now; kick(); }
     }, { passive: true });
     window.addEventListener("pointerdown", function (e) {
-      lastPos = { x: e.clientX, y: e.clientY };
-      ring(e.clientX, e.clientY); kick();
+      if (reduce) return;
+      spawn(e.clientX, e.clientY, 1.6); kick();   // 点击：一圈更明显的涟漪
     }, { passive: true });
-    document.addEventListener("mouseleave", function () { lastPos = null; });
-    document.addEventListener("visibilitychange", function () { if (document.hidden) particles = []; });
+    document.addEventListener("visibilitychange", function () { if (document.hidden) ripples = []; });
 
     resize();
-    if (!reduce) { ring(W / 2, H / 2); kick(); }
+    // 首屏轻点一圈，提示存在；之后完全由鼠标驱动
+    if (!reduce) { spawn(W / 2, H * 0.42, 1); kick(); }
   })();
 
   /* =========================================================
-     真实后端：投稿持久化（Cloudflare R2 via Pages Functions）
+     真实后端：投稿持久化（Cloudflare KV，可切换群晖 NAS）
      ========================================================= */
   function setStatus(msg, isErr) {
     if (!statusEl) return;
