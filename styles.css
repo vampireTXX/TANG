@@ -58,7 +58,7 @@ a { color: inherit; }
   background-size: 28px 28px, 28px 28px, 120px 120px;
 }
 
-/* 鼠标跟随像素粒子层 */
+/* 鼠标跟随水波纹像素层 */
 .fx-canvas {
   position: fixed;
   inset: 0;
@@ -67,6 +67,7 @@ a { color: inherit; }
   pointer-events: none;
   z-index: 1;
   display: block;
+  opacity: 0.6;   /* 整体柔化，避免干扰阅读 */
 }
 
 /* ===================== 导航 ===================== */
