@@ -67,7 +67,7 @@ a { color: inherit; }
   pointer-events: none;
   z-index: 1;
   display: block;
-  opacity: 0.7;   /* 整体柔化，避免干扰阅读 */
+  opacity: 0.95;  /* 颗粒已足够稀疏（≤1%），提高亮度使闪烁更醒目 */
 }
 
 /* ===================== 导航 ===================== */
