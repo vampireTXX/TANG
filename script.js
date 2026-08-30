@@ -301,9 +301,10 @@
     statusEl.style.color = isErr ? "var(--pink)" : "var(--cyan)";
   }
 
-  async function uploadFile(file) {
+  async function uploadFile(file, category) {
     const fd = new FormData();
     fd.append("file", file);
+    fd.append("category", category || "投稿");
     const r = await fetch(API + "/upload", { method: "POST", body: fd });
     if (!r.ok) {
       let m = "上传失败";
@@ -334,27 +335,29 @@
 
   async function addFiles(files) {
     const arr = Array.prototype.slice.call(files);
+    const catSel = document.getElementById("catSelect");
+    const cat = catSel ? catSel.value : "投稿";
     for (let i = 0; i < arr.length; i++) {
       const file = arr[i];
       if (!file.type || !file.type.startsWith("image/")) continue;
       const title = (file.name || "投稿作品").replace(/\.[^.]+$/, "").slice(0, 18) || "投稿作品";
-      setStatus("上传中：" + file.name + " …");
+      setStatus("上传中：" + file.name + "（" + cat + "）…");
       try {
-        const res = await uploadFile(file);
-        gallery.unshift({ src: res.url, cat: "投稿", title: title, desc: "用户投稿 · 已持久化", remote: true });
-        setStatus("✓ 已持久化：" + file.name);
+        const res = await uploadFile(file, cat);
+        gallery.unshift({ src: res.url, cat: cat, title: title, desc: "用户投稿 · 已持久化", remote: true });
+        setStatus("✓ 已持久化：" + file.name + "（" + cat + "）");
       } catch (err) {
         setStatus("后端不可用，已用本地预览：" + file.name, true);
         await new Promise(function (resolve) {
           const rd = new FileReader();
           rd.onload = function () {
-            gallery.unshift({ src: rd.target.result, cat: "投稿", title: title, desc: "本地预览" });
+            gallery.unshift({ src: rd.target.result, cat: cat, title: title, desc: "本地预览" });
             resolve();
           };
           rd.readAsDataURL(file);
         });
       }
-      if (activeFilter !== "all" && activeFilter !== "投稿") { activeFilter = "all"; syncChips(); }
+      if (activeFilter !== "all" && activeFilter !== cat) { activeFilter = "all"; syncChips(); }
       render();
     }
   }
