@@ -1,32 +1,28 @@
-## 特别声明:本仓库脚本已内置助力码，介意请勿使用
+# PIXEL·DROP — 像素颗粒图片投放站
 
-* Any unlocking and decryption analysis scripts involved in the Script project released by this warehouse are only used for testing, learning and research, and are forbidden to be used for commercial purposes. Their legality, accuracy, completeness and effectiveness cannot be guaranteed. Please make your own judgment based on the situation. .
+一个以「像素颗粒 + 模块化」视觉为核心的响应式图片画廊 / 投稿站。纯静态（HTML + CSS + JS），无构建步骤，可直接部署到任意静态托管或 GitHub Pages。
 
-* All resource files in this project are forbidden to be reproduced or published in any form by any official account or self-media.
+## 特性
+- **模块化网格**：`auto-fill` 响应式栅格，手机到宽屏自适应。
+- **像素颗粒**：一键在「像素 / 清晰」间切换，照片经低分辨率重绘后放大成像素块。
+- **分类筛选**：全部 / 风景 / 城市 / 人物 / 抽象。
+- **灯箱**：点击放大查看，支持 ← → 翻页与 Esc 关闭。
+- **投稿上传**：拖拽或选择图片，立即进入画廊（本地预览，纯前端演示）。
 
-* This warehouse is not responsible for any script problems, including but not limited to any loss or damage caused by any script errors.
+## 本地预览
+```bash
+cd pixel-gallery
+python3 -m http.server 8080
+# 浏览器打开 http://localhost:8080
+```
 
-* Any user who indirectly uses the script, including but not limited to establishing a VPS or disseminating it when certain actions violate national/regional laws or related regulations, this warehouse is not responsible for any privacy leakage or other consequences caused by this.
+## 目录
+```
+pixel-gallery/
+├── index.html   结构
+├── styles.css   像素视觉系统（色板 / 网格 / 颗粒叠层）
+├── script.js    渲染 / 像素化 / 筛选 / 灯箱 / 上传
+└── README.md
+```
 
-* Do not use any content of the Script project for commercial or illegal purposes, otherwise you will be responsible for the consequences.
-
-* If any unit or individual believes that the script of the project may be suspected of infringing on their rights, they should promptly notify and provide proof of identity and ownership. We will delete the relevant script after receiving the certification document.
-
-* Anyone who views this item in any way or directly or indirectly uses any script of the Script item should read this statement carefully. This warehouse reserves the right to change or supplement this disclaimer at any time. Once you have used and copied any relevant scripts or rules of the Script project, you are deemed to have accepted this disclaimer.
-
- **You must completely delete the above content from your computer or mobile phone within 24 hours after downloading.**  </br>
-> ***You have used or copied any script made by yourself in this warehouse, it is deemed to have `accepted` this statement, please read it carefully*** 
-
-## 如需使用教程请移步至 [course](https://www.kancloud.cn/zfeng3242_/zfeng1005/2318693)
-
-## [TG群组](https://t.me/JD_DX1005)
-
-## Special thanks to:
-
-* [@lxk0301](https://gitee.com/lxk0301) 
-
-* [@i-chenzhe](https://github.com/i-chenzhe) 
-
-* [@whyour](https://github.com/whyour) 
-
-* [@shuye72](https://gihub.com/wuzhi04)
+> 说明：示例图片来自 `picsum.photos`，需联网加载。投稿功能为前端演示，不会真正持久化到服务器；如需永久保存，请接入后端或对象存储。
