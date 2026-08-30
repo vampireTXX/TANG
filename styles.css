@@ -20,7 +20,7 @@
   --px: 4px;                 /* 基础像素单位 */
   --radius: 0px;            /* 像素风：硬边角 */
   --shadow: 6px 6px 0 #000; /* 硬投影 */
-  --maxw: 1180px;
+  --maxw: 1340px;
 
   --font-pixel: 'Press Start 2P', monospace;
   --font-body:  'Space Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -199,23 +199,24 @@ main { position: relative; z-index: 2; }
 /* ===================== 画廊网格 ===================== */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 26px;
 }
 .cell {
   background: var(--panel);
-  border: var(--px) solid var(--line);
-  box-shadow: var(--shadow);
+  border: calc(var(--px) * 1.5) solid var(--line);
+  box-shadow: 8px 8px 0 #000;
   overflow: hidden;
-  transition: transform .12s, box-shadow .12s, border-color .12s;
+  transition: transform .14s, box-shadow .14s, border-color .14s;
   cursor: pointer;
 }
-.cell:hover { transform: translate(-3px,-3px); box-shadow: 9px 9px 0 #000; border-color: var(--pink); }
+.cell:hover { transform: translate(-5px,-5px) scale(1.015); box-shadow: 12px 12px 0 var(--pink); border-color: var(--pink); }
 .cell__media {
   position: relative;
   aspect-ratio: 1 / 1;
-  background: var(--bg-soft);
+  background: #0a0818;
   overflow: hidden;
+  border-bottom: calc(var(--px) * 1.5) solid var(--line);
 }
 .cell__canvas, .cell__img {
   width: 100%; height: 100%;
@@ -234,7 +235,7 @@ body.pixel-mode .cell__img { display: none; }
   padding: 5px 7px; border: 2px solid var(--yellow);
 }
 .cell__meta { padding: 12px 14px 16px; }
-.cell__title { font-size: 15px; margin: 0 0 4px; font-weight: 700; }
+.cell__title { font-size: 17px; margin: 0 0 4px; font-weight: 700; letter-spacing: .5px; }
 .cell__desc { font-size: 13px; color: var(--ink-dim); margin: 0; }
 
 .empty { text-align: center; color: var(--ink-dim); padding: 40px 0; font-family: var(--font-pixel); font-size: 11px; }
@@ -324,7 +325,7 @@ body.pixel-mode .lightbox__img { display: none; }
 /* ===================== 响应式 ===================== */
 @media (max-width: 640px) {
   .nav__links { display: none; }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
   .hero { padding: 64px 16px 72px; }
   .gallery-section, .submit-section, .about-section { padding: 48px 16px; }
 }
