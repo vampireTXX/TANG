@@ -33,8 +33,7 @@ async function nasLogin(env) {
   return j.data.sid;
 }
 
-async function nasUpload(env, sid, bytes, filename) {
-  const dir = (env.NAS_DIR || "/pixel-drop").replace(/\/+$/, "");
+async function nasUpload(env, sid, bytes, dir, filename) {
   const url = new URL(env.NAS_BASE.replace(/\/+$/, "") + "/webapi/entry.cgi");
   url.searchParams.set("api", "SYNO.FileStation.Upload");
   url.searchParams.set("version", "2");
@@ -48,6 +47,11 @@ async function nasUpload(env, sid, bytes, filename) {
   const j = await r.json().catch(() => ({}));
   if (!j.success) throw new Error("NAS 上传失败: " + JSON.stringify(j.error || r.status));
   return dir + "/" + filename;
+}
+
+// 仅保留安全字符，避免路径穿越 / 非法文件名（中文分类名保留）
+function safeFolder(name) {
+  return (name || "投稿").replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").trim().slice(0, 24) || "投稿";
 }
 
 export async function onRequestPost({ request, env }) {
@@ -68,15 +72,18 @@ export async function onRequestPost({ request, env }) {
     const id = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
     const name = String(file.name || "untitled").slice(0, 80);
     const type = file.type;
+    const category = safeFolder(form.get("category"));
     const bytes = new Uint8Array(await file.arrayBuffer());
 
     const useNas = !!(env.NAS_BASE && env.NAS_USER && env.NAS_PASS);
+    const baseDir = (env.NAS_DIR || "/pixel-drop").replace(/\/+$/, "");
+    const dir = baseDir + "/" + category;   // 例：/shanchuan/风景
     let store = "kv";
     let nasPath = "";
 
     if (useNas) {
       const sid = await nasLogin(env);
-      nasPath = await nasUpload(env, sid, bytes, id + extOf(type));
+      nasPath = await nasUpload(env, sid, bytes, dir, id + extOf(type));
       store = "nas";
     } else {
       // KV 回退：整图以 base64 存储
@@ -85,7 +92,7 @@ export async function onRequestPost({ request, env }) {
       for (let i = 0; i < bytes.length; i += chunk) {
         bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
       }
-      const value = JSON.stringify({ t: type, n: name, c: "投稿", d: btoa(bin) });
+      const value = JSON.stringify({ t: type, n: name, c: category, d: btoa(bin) });
       const r = await fetch(`${KV}/values/img:${id}`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -95,14 +102,14 @@ export async function onRequestPost({ request, env }) {
     }
 
     // 索引（两路存储都写，便于 /api/images 统一列出）
-    const meta = JSON.stringify({ store, nasPath, n: name, c: "投稿", t: type });
+    const meta = JSON.stringify({ store, nasPath, n: name, c: category, t: type });
     await fetch(`${KV}/values/meta:${id}`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: meta,
     });
 
-    return Response.json({ ok: true, id, store, url: "/api/asset/" + id, name, cat: "投稿" });
+    return Response.json({ ok: true, id, store, url: "/api/asset/" + id, name, cat: category });
   } catch (e) {
     return Response.json({ ok: false, error: "服务器错误：" + (e && e.message ? e.message : e) }, { status: 500 });
   }
