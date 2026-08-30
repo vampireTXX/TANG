@@ -1,10 +1,11 @@
 /**
  * POST /api/upload
  * 接收 multipart/form-data 图片。
- *   - 若配置了群晖 NAS（env.NAS_BASE / NAS_USER / NAS_PASS），文件写入 NAS，
- *     KV 仅保存轻量索引 {store:'nas', nasPath, n, c, t}。
+ *   - 若 KV 中配置了群晖 NAS（cfg:NAS_BASE / cfg:NAS_USER / cfg:NAS_PASS），
+ *     文件写入 NAS 的 /shanchuan/<分类>/ 目录，KV 仅保存轻量索引。
  *   - 否则回退 Cloudflare KV（base64 整图存储）。
- * 凭据取自环境变量：CF_KV_TOKEN（必填）、NAS_*（可选）。
+ * NAS 凭据存于 KV 的 cfg:* 键（不进仓库、不进 Pages 环境变量），
+ * 由本函数运行时从 KV 读取。
  */
 const ACCT = "15e7bfc2475d3ac5e82b087b43b86aa9";
 const NS = "26a1a51ecec9466f8a4ecb2661bcd1b0";
@@ -17,14 +18,37 @@ function extOf(type) {
   return ({ "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif", "image/avif": ".avif" })[type] || ".bin";
 }
 
+async function kvGet(env, key) {
+  const token = env.CF_KV_TOKEN;
+  if (!token) return "";
+  const r = await fetch(`${KV}/values/${key}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) return "";
+  return (await r.text()).trim();
+}
+
+// 群晖 NAS 配置取自 KV 的 cfg:* 键
+async function loadNasConfig(env) {
+  const [NAS_BASE, NAS_USER, NAS_PASS, NAS_DIR] = await Promise.all([
+    kvGet(env, "cfg:NAS_BASE"),
+    kvGet(env, "cfg:NAS_USER"),
+    kvGet(env, "cfg:NAS_PASS"),
+    kvGet(env, "cfg:NAS_DIR"),
+  ]);
+  return { NAS_BASE, NAS_USER, NAS_PASS, NAS_DIR };
+}
+
+function safeFolder(name) {
+  return (name || "投稿").replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").trim().slice(0, 24) || "投稿";
+}
+
 /* ---------- 群晖 NAS (DSM File Station) ---------- */
-async function nasLogin(env) {
-  const u = new URL(env.NAS_BASE.replace(/\/+$/, "") + "/webapi/auth.cgi");
+async function nasLogin(cfg) {
+  const u = new URL(cfg.NAS_BASE.replace(/\/+$/, "") + "/webapi/auth.cgi");
   u.searchParams.set("api", "SYNO.API.Auth");
   u.searchParams.set("version", "7");
   u.searchParams.set("method", "login");
-  u.searchParams.set("account", env.NAS_USER);
-  u.searchParams.set("passwd", env.NAS_PASS);
+  u.searchParams.set("account", cfg.NAS_USER);
+  u.searchParams.set("passwd", cfg.NAS_PASS);
   u.searchParams.set("session", "FileStation");
   u.searchParams.set("format", "sid");
   const r = await fetch(u.toString(), { method: "POST" });
@@ -33,8 +57,8 @@ async function nasLogin(env) {
   return j.data.sid;
 }
 
-async function nasUpload(env, sid, bytes, dir, filename) {
-  const url = new URL(env.NAS_BASE.replace(/\/+$/, "") + "/webapi/entry.cgi");
+async function nasUpload(cfg, sid, bytes, dir, filename) {
+  const url = new URL(cfg.NAS_BASE.replace(/\/+$/, "") + "/webapi/entry.cgi");
   url.searchParams.set("api", "SYNO.FileStation.Upload");
   url.searchParams.set("version", "2");
   url.searchParams.set("method", "upload");
@@ -47,11 +71,6 @@ async function nasUpload(env, sid, bytes, dir, filename) {
   const j = await r.json().catch(() => ({}));
   if (!j.success) throw new Error("NAS 上传失败: " + JSON.stringify(j.error || r.status));
   return dir + "/" + filename;
-}
-
-// 仅保留安全字符，避免路径穿越 / 非法文件名（中文分类名保留）
-function safeFolder(name) {
-  return (name || "投稿").replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").trim().slice(0, 24) || "投稿";
 }
 
 export async function onRequestPost({ request, env }) {
@@ -75,15 +94,16 @@ export async function onRequestPost({ request, env }) {
     const category = safeFolder(form.get("category"));
     const bytes = new Uint8Array(await file.arrayBuffer());
 
-    const useNas = !!(env.NAS_BASE && env.NAS_USER && env.NAS_PASS);
-    const baseDir = (env.NAS_DIR || "/pixel-drop").replace(/\/+$/, "");
+    const cfg = await loadNasConfig(env);
+    const useNas = !!(cfg.NAS_BASE && cfg.NAS_USER && cfg.NAS_PASS);
+    const baseDir = (cfg.NAS_DIR || "/pixel-drop").replace(/\/+$/, "");
     const dir = baseDir + "/" + category;   // 例：/shanchuan/风景
     let store = "kv";
     let nasPath = "";
 
     if (useNas) {
-      const sid = await nasLogin(env);
-      nasPath = await nasUpload(env, sid, bytes, dir, id + extOf(type));
+      const sid = await nasLogin(cfg);
+      nasPath = await nasUpload(cfg, sid, bytes, dir, id + extOf(type));
       store = "nas";
     } else {
       // KV 回退：整图以 base64 存储
