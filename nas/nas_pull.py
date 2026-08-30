@@ -78,8 +78,31 @@ def http_get(url, binary=False):
     raise last
 
 
+def check_writable():
+    """启动时自检目标目录是否可写；不可写则打印清晰指引并退出。"""
+    try:
+        os.makedirs(BASE_DIR, exist_ok=True)
+        test = os.path.join(BASE_DIR, ".write_test")
+        with open(test, "w") as f:
+            f.write("ok")
+        os.remove(test)
+    except PermissionError:
+        print("[nas_pull] ✗ 没有写权限: %s" % BASE_DIR)
+        print("[nas_pull] 解决（二选一）：")
+        print("   1) 把本任务计划改成用 root 运行：")
+        print("      控制面板 → 任务计划 → 编辑该任务 → 顶部“用户”改为 root → 确定")
+        print("   2) 或给运行用户授予该共享文件夹写权限：")
+        print("      控制面板 → 共享文件夹 → shanchuan → 编辑 → 权限 → 设为 可读写")
+        sys.exit(2)
+    except Exception as e:
+        print("[nas_pull] ✗ 目标目录异常: %s (%s)" % (BASE_DIR, e))
+        sys.exit(2)
+
+
 def main():
     print("[nas_pull] %s  站点=%s  目标=%s" % (time.strftime("%Y-%m-%d %H:%M:%S"), SITE, BASE_DIR))
+    check_writable()
+    try:
     try:
         raw, _ = http_get(SITE + "/api/images")
         items = json.loads(raw.decode("utf-8"))
