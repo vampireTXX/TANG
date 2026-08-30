@@ -50,16 +50,16 @@
   }
 
   /* =========================================================
-     实时像素格「呼吸」动画引擎
-     - 把图片降采样成低分辨率像素格（res×res）
-     - 每个像素块按正弦波独立位移 -> 像素格浮动
-     - 全局振幅随时间缓慢起伏 -> 真正会呼吸
-     - 整体明暗轻微脉动 -> 像在吸气/呼气
+     实时像素格「呼吸」动画引擎（固定随机式 · 不变形）
+     - 把图片降采样成低分辨率像素格（res×res），每个格子位置固定
+     - 每个格子按各自的「固定随机相位」做亮度呼吸 -> 像 LED 点阵明灭
+     - 叠加一层很慢的全局呼吸，整体像在吸气/呼气
+     - 不做任何位移，图片几何完全不变形
      - 仅在 pixel-mode 且非 reduced-motion 时运行
      ========================================================= */
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const BREATH_RES = 32;       // 画廊单元像素格数（越小球块越大、浮动越明显）
-  const LB_BREATH_RES = 60;    // 灯箱像素格数
+  const BREATH_RES = 16;       // 画廊单元像素格数（越小格块越大、越便于展示呼吸）
+  const LB_BREATH_RES = 28;    // 灯箱像素格数
   const BREATH_FPS = 30;       // 动画帧率（顺滑且省电）
   function pixelModeOn() { return document.body.classList.contains("pixel-mode"); }
 
@@ -76,33 +76,55 @@
     let any = false;
     breathViews.forEach(function (v) {
       if (!v.el.isConnected) { breathViews.delete(v); return; }
-      if (v.visible && v.img && pixelModeOn() && !reduceMotion) { v.frame(now); any = true; }
+      if (v.visible && v.img && v.hasPix && pixelModeOn() && !reduceMotion) { v.frame(now); any = true; }
     });
     breathRaf = any ? requestAnimationFrame(breathTick) : null;
   }
 
-  // 创建一个「会呼吸的像素格」视图，绑定到某个 canvas
+  // 创建一个「固定随机式明暗呼吸」的像素格视图，绑定到某个 canvas
+  // 像素格位置固定（不变形）；每个格子按固定随机相位的 sin 做亮度呼吸
   function createBreathView(canvas, res) {
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
     const low = document.createElement("canvas");
     low.width = res; low.height = res;
     const lowCtx = low.getContext("2d");
+    const pix = new Array(res * res);          // 每个格子原始 [r,g,b]
+    const phase = new Float32Array(res * res); // 固定随机相位（生成一次，不随帧变化 -> 不闪烁）
+
+    // 基于线性序列的确定性伪随机 -> 刷新一致、无雪花闪烁
+    (function genPhase() {
+      let seed = 1337;
+      for (let i = 0; i < phase.length; i++) {
+        seed = (seed * 9301 + 49297) % 233280;
+        phase[i] = (seed / 233280) * Math.PI * 2;
+      }
+    })();
 
     const view = {
-      el: canvas, img: null, visible: true,
+      el: canvas, img: null, visible: true, hasPix: false,
       setImage: function (image) {
         this.img = image;
         lowCtx.imageSmoothingEnabled = false;
         drawCover(lowCtx, image, res, res);
-        if (!pixelModeOn() || reduceMotion) pixelateStatic(canvas, image, res); // 静态回退
-        breathEnsureLoop();
+        try {
+          const d = lowCtx.getImageData(0, 0, res, res).data;
+          for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+            pix[j] = [d[i], d[i + 1], d[i + 2]];
+          }
+          this.hasPix = true;
+        } catch (e) {
+          this.hasPix = false; // 跨域无 CORS 头时回退静态像素图
+        }
+        if (this.hasPix && pixelModeOn() && !reduceMotion) breathEnsureLoop();
+        else pixelateStatic(canvas, image, res);
       },
       setVisible: function (v) {
         this.visible = v;
-        if (v && pixelModeOn() && !reduceMotion) breathEnsureLoop();
+        if (v && this.hasPix && pixelModeOn() && !reduceMotion) breathEnsureLoop();
       },
       frame: function (now) {
+        if (!this.hasPix) return;
         const rect = canvas.getBoundingClientRect();
         if (rect.width < 2 || rect.height < 2) return; // 隐藏/灯箱关闭时不绘制
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -111,24 +133,22 @@
         if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
         const block = W / res;
         const t = now * 0.001;
-        const breathe = 0.5 + 0.5 * Math.sin(now * 0.0006);      // 0..1 慢呼吸
-        const amp = block * (0.14 + 0.22 * breathe);             // 位移幅度随呼吸起伏
-        const bw = Math.ceil(block) + 1;                         // 略大，避免露边
+        const global = 0.5 + 0.5 * Math.sin(t * 0.7);   // 全局缓慢呼吸 0..1（约 9s 周期）
+        const bw = Math.ceil(block) + 1;                // 略大，避免格子间露缝
         ctx.imageSmoothingEnabled = false;
-        ctx.fillStyle = "#161229";                               // 底色，遮住位移留白
-        ctx.fillRect(0, 0, W, H);
         for (let y = 0; y < res; y++) {
           for (let x = 0; x < res; x++) {
-            const dx = Math.sin(t * 1.1 + y * 0.55 + x * 0.13) * amp;
-            const dy = Math.cos(t * 1.3 + x * 0.55 + y * 0.11) * amp;
-            const px = Math.round(x * block + dx);
-            const py = Math.round(y * block + dy);
-            ctx.drawImage(low, x, y, 1, 1, px, py, bw, bw);
+            const idx = y * res + x;
+            const p = pix[idx];
+            // 固定随机相位 -> 每格独立呼吸，不同步闪烁
+            const local = 0.5 + 0.5 * Math.sin(t * 1.5 + phase[idx]);
+            const b = 0.5 + 0.5 * (0.35 * global + 0.65 * local); // 亮度系数 ~0.5..1.0
+            const px = Math.round(x * block);
+            const py = Math.round(y * block);
+            ctx.fillStyle = "rgb(" + ((p[0] * b) | 0) + "," + ((p[1] * b) | 0) + "," + ((p[2] * b) | 0) + ")";
+            ctx.fillRect(px, py, bw, bw);
           }
         }
-        // 呼吸式明暗脉动：breathe 高时整体更亮、低时略暗
-        const glow = 0.06 * (1 - breathe);
-        if (glow > 0.004) { ctx.fillStyle = "rgba(0,0,0," + glow.toFixed(3) + ")"; ctx.fillRect(0, 0, W, H); }
       },
     };
     breathViews.add(view);
@@ -169,6 +189,7 @@
     img.className = "cell__img";
     img.alt = item.title;
     img.loading = "lazy";
+    img.crossOrigin = "anonymous"; // 允许 getImageData 读取像素（呼吸动画需要）
 
     const tag = document.createElement("span");
     tag.className = "cell__tag";
