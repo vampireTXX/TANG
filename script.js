@@ -1,6 +1,6 @@
 /* =========================================================
    PIXEL·DROP — 交互脚本
-   职责：模块化画廊 · 像素化 · 分类筛选 · 灯箱 · 鼠标跟随水波纹像素波动 · 真实后端投稿
+   职责：模块化画廊 · 像素化 · 分类筛选 · 灯箱 · 随机呼吸闪烁像素颗粒背景 · 真实后端投稿
    ========================================================= */
 (function () {
   "use strict";
@@ -58,8 +58,8 @@
      - 仅在 pixel-mode 且非 reduced-motion 时运行
      ========================================================= */
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const BREATH_RES = 16;       // 画廊单元像素格数（越小格块越大、越便于展示呼吸）
-  const LB_BREATH_RES = 28;    // 灯箱像素格数
+  const BREATH_RES = 40;       // 画廊单元像素格数（越大格块越细、越能看清照片轮廓）
+  const LB_BREATH_RES = 64;    // 灯箱像素格数
   const BREATH_FPS = 30;       // 动画帧率（顺滑且省电）
   function pixelModeOn() { return document.body.classList.contains("pixel-mode"); }
 
@@ -317,107 +317,75 @@
   });
 
   /* =========================================================
-     鼠标跟随像素波动（柔和 · 水波纹式缓慢扩散）
-     低分辨率离屏缓冲 -> 放大渲染，得到硬边像素块
-     设计：低频生成、缓慢扩散、最多数圈、软高斯环
+     随机呼吸闪烁的像素颗粒背景（无鼠标跟随）
+     整屏固定网格 -> 每个像素块独立随机相位，慢呼吸 + 高频微闪
+     低透明度铺底，营造「活的点阵」氛围，不干扰照片阅读
      ========================================================= */
-  (function initFX() {
-    const canvas = document.getElementById("fxCanvas");
+  (function initGrainField() {
+    const canvas = document.getElementById("grainField");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const GRID = 22;                                  // 每个像素块 = 22 CSS 像素
+    const COLORS = [                                  // 有限发光色板（暗底上的点阵）
+      [124, 92, 255],   // 紫
+      [44, 232, 245],   // 青
+      [255, 82, 119],   // 粉
+      [43, 255, 136],   // 绿
+      [249, 248, 113],  // 黄
+    ];
+    let W = 0, H = 0, bw = 0, bh = 0, dpr = 1;
+    const cells = [];
 
-    // 柔和水波色：青/蓝绿，低饱和，避免刺眼
-    const COLOR = "120,232,245";
-    const GRID = 5;            // 每个像素块 = GRID 个 CSS 像素
-    const MAX_RIPPLES = 4;     // 同时最多 4 圈，避免杂乱
-    const SPAWN_MS = 420;      // 鼠标移动时最小生成间隔（节奏舒缓）
-
-    let W = 0, H = 0, bw = 0, bh = 0, buf = null, bctx = null, dpr = 1;
-    let ripples = [], raf = null, lastSpawn = 0;
-
-    function resize() {
+    function build() {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
       W = window.innerWidth; H = window.innerHeight;
       canvas.width = Math.floor(W * dpr); canvas.height = Math.floor(H * dpr);
       canvas.style.width = W + "px"; canvas.style.height = H + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       bw = Math.ceil(W / GRID); bh = Math.ceil(H / GRID);
-      buf = document.createElement("canvas"); buf.width = bw; buf.height = bh;
-      bctx = buf.getContext("2d");
+      cells.length = 0;
+      for (let i = 0; i < bw * bh; i++) {
+        cells.push({
+          c: COLORS[(Math.random() * COLORS.length) | 0],
+          phase: Math.random() * Math.PI * 2,        // 固定随机相位 -> 各块不同步
+          speed: 0.35 + Math.random() * 1.7,         // 呼吸快慢随机
+          base: 0.05 + Math.random() * 0.11,         // 单体基础亮度（多数暗、偶发亮）
+        });
+      }
     }
 
-    // strength：点击时略强，移动时常规
-    function spawn(x, y, strength) {
-      if (ripples.length >= MAX_RIPPLES) ripples.shift();
-      ripples.push({
-        x: x / GRID, y: y / GRID,
-        r: 1.2,
-        life: 1,
-        speed: 0.13 * (strength || 1),    // 很慢的扩散速度（缓冲单位/帧）
-        decay: 0.0040 * (strength || 1),  // 很慢的消逝（约 4s 淡出）
-        maxA: 0.5 * (strength ? 1.25 : 1),
-      });
-    }
-
-    // 软高斯环 + 一层更淡的内环，模拟水面波纹的层次
-    function drawRipple(rp) {
-      const sigma = 1.15;
-      const sigma2 = sigma * 0.8;
-      const r = rp.r;
-      const x0 = Math.max(0, Math.floor(rp.x - r - 4));
-      const x1 = Math.min(bw - 1, Math.ceil(rp.x + r + 4));
-      const y0 = Math.max(0, Math.floor(rp.y - r - 4));
-      const y1 = Math.min(bh - 1, Math.ceil(rp.y + r + 4));
-      for (let y = y0; y <= y1; y++) {
-        for (let x = x0; x <= x1; x++) {
-          const dx = x - rp.x, dy = y - rp.y;
-          const d = Math.sqrt(dx * dx + dy * dy);
-          const g =
-            0.78 * Math.exp(-((d - r) * (d - r)) / (2 * sigma * sigma)) +
-            0.22 * Math.exp(-((d - r * 0.62) * (d - r * 0.62)) / (2 * sigma2 * sigma2));
-          if (g < 0.04) continue;
-          const a = g * rp.life * rp.maxA;
-          bctx.fillStyle = "rgba(" + COLOR + "," + a.toFixed(3) + ")";
-          bctx.fillRect(x, y, 1, 1);
+    function draw(now) {
+      const t = now * 0.001;
+      ctx.clearRect(0, 0, W, H);
+      for (let y = 0; y < bh; y++) {
+        for (let x = 0; x < bw; x++) {
+          const cl = cells[y * bw + x];
+          // 慢呼吸 sin + 高频微闪 -> 像随机明灭的 LED
+          let v = 0.5 + 0.5 * Math.sin(t * cl.speed + cl.phase);
+          v = v * 0.7 + 0.3 * Math.abs(Math.sin(t * cl.speed * 2.7 + cl.phase * 1.7));
+          const a = cl.base * v;
+          if (a < 0.012) continue;
+          ctx.fillStyle = "rgba(" + cl.c[0] + "," + cl.c[1] + "," + cl.c[2] + "," + a.toFixed(3) + ")";
+          ctx.fillRect(x * GRID, y * GRID, GRID, GRID);
         }
       }
     }
 
-    function kick() { if (raf == null) raf = requestAnimationFrame(loop); }
-
-    function loop() {
-      bctx.clearRect(0, 0, bw, bh);
-      for (let i = ripples.length - 1; i >= 0; i--) {
-        const rp = ripples[i];
-        rp.r += rp.speed;
-        rp.life -= rp.decay;
-        if (rp.life <= 0 || rp.r > Math.max(bw, bh) * 1.1) { ripples.splice(i, 1); continue; }
-        drawRipple(rp);
-      }
-      ctx.clearRect(0, 0, W, H);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(buf, 0, 0, bw, bh, 0, 0, bw * GRID, bh * GRID);
-
-      if (ripples.length > 0) raf = requestAnimationFrame(loop);
-      else { raf = null; ctx.clearRect(0, 0, W, H); }
+    let raf = null, last = 0;
+    function loop(now) {
+      if (now - last < 50) { raf = requestAnimationFrame(loop); return; }  // 约 20fps，省电
+      last = now;
+      draw(now);
+      raf = requestAnimationFrame(loop);
     }
+    function start() { if (raf == null && !reduce) raf = requestAnimationFrame(loop); }
+    function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
 
-    window.addEventListener("resize", resize);
-    window.addEventListener("pointermove", function (e) {
-      if (reduce) return;
-      const now = performance.now();
-      if (now - lastSpawn > SPAWN_MS) { spawn(e.clientX, e.clientY, 1); lastSpawn = now; kick(); }
-    }, { passive: true });
-    window.addEventListener("pointerdown", function (e) {
-      if (reduce) return;
-      spawn(e.clientX, e.clientY, 1.6); kick();   // 点击：一圈更明显的涟漪
-    }, { passive: true });
-    document.addEventListener("visibilitychange", function () { if (document.hidden) ripples = []; });
-
-    resize();
-    // 首屏轻点一圈，提示存在；之后完全由鼠标驱动
-    if (!reduce) { spawn(W / 2, H * 0.42, 1); kick(); }
+    window.addEventListener("resize", build);
+    document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
+    build();
+    if (reduce) draw(0); else start();
   })();
 
   /* =========================================================
