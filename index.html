@@ -73,6 +73,17 @@
       <div class="section-head">
         <h2 class="section-title">投放图片 / SUBMIT</h2>
       </div>
+      <div class="submit-cat">
+        <label for="catSelect">投稿分类</label>
+        <select id="catSelect">
+          <option value="投稿">投稿</option>
+          <option value="风景">风景</option>
+          <option value="城市">城市</option>
+          <option value="人物">人物</option>
+          <option value="抽象">抽象</option>
+        </select>
+        <span class="submit-cat__hint">图片将存入群晖 NAS 的 /shanchuan/&lt;分类&gt;/ 目录</span>
+      </div>
       <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="点击或拖拽图片到此处上传">
         <input type="file" id="fileInput" accept="image/*" multiple hidden />
         <div class="dropzone__inner">
