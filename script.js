@@ -58,8 +58,8 @@
      - 仅在 pixel-mode 且非 reduced-motion 时运行
      ========================================================= */
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const BREATH_RES = 40;       // 画廊单元像素格数（越大格块越细、越能看清照片轮廓）
-  const LB_BREATH_RES = 64;    // 灯箱像素格数
+  const BREATH_RES = 56;       // 画廊单元像素格数（越大格块越细、越能看清照片轮廓）
+  const LB_BREATH_RES = 88;    // 灯箱像素格数
   const BREATH_FPS = 30;       // 动画帧率（顺滑且省电）
   function pixelModeOn() { return document.body.classList.contains("pixel-mode"); }
 
@@ -317,25 +317,31 @@
   });
 
   /* =========================================================
-     随机呼吸闪烁的像素颗粒背景（无鼠标跟随）
-     整屏固定网格 -> 每个像素块独立随机相位，慢呼吸 + 高频微闪
-     低透明度铺底，营造「活的点阵」氛围，不干扰照片阅读
+     随机点亮的像素颗粒背景（稀疏 · 高亮 · 无鼠标跟随）
+     - 整屏固定网格，但绝不整体一起闪
+     - 同一时刻被点亮的格子不超过总数的 1%（MAX_RATIO）
+     - 每颗随机选位、随机颜色，独立淡入淡出后熄灭，再随机换位重生
+     - 亮度较高（peak 0.45~0.95），形成「零星爆闪的点阵」质感
      ========================================================= */
   (function initGrainField() {
     const canvas = document.getElementById("grainField");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const GRID = 22;                                  // 每个像素块 = 22 CSS 像素
-    const COLORS = [                                  // 有限发光色板（暗底上的点阵）
+    const GRID = 22;              // 每个像素块 = 22 CSS 像素
+    const MAX_RATIO = 0.01;       // 同时点亮上限：总格数的 1%
+    const SPAWN_PER_FRAME = 1.1;  // 每帧期望新增数（受 maxActive 硬上限约束，不会超 1%）
+    const COLORS = [              // 有限发光色板（暗底上的点阵）
       [124, 92, 255],   // 紫
       [44, 232, 245],   // 青
       [255, 82, 119],   // 粉
       [43, 255, 136],   // 绿
       [249, 248, 113],  // 黄
+      [255, 255, 255],  // 白（偶发高光）
     ];
-    let W = 0, H = 0, bw = 0, bh = 0, dpr = 1;
-    const cells = [];
+    let W = 0, H = 0, bw = 0, bh = 0, dpr = 1, maxActive = 1;
+    let sparks = [];
+    const occupied = new Set();   // 防止同一格重复点亮
 
     function build() {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -344,39 +350,51 @@
       canvas.style.width = W + "px"; canvas.style.height = H + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       bw = Math.ceil(W / GRID); bh = Math.ceil(H / GRID);
-      cells.length = 0;
-      for (let i = 0; i < bw * bh; i++) {
-        cells.push({
-          c: COLORS[(Math.random() * COLORS.length) | 0],
-          phase: Math.random() * Math.PI * 2,        // 固定随机相位 -> 各块不同步
-          speed: 0.35 + Math.random() * 1.7,         // 呼吸快慢随机
-          base: 0.05 + Math.random() * 0.11,         // 单体基础亮度（多数暗、偶发亮）
-        });
-      }
+      maxActive = Math.max(1, Math.floor(bw * bh * MAX_RATIO));
+      sparks = [];
+      occupied.clear();
     }
 
-    function draw(now) {
-      const t = now * 0.001;
+    function spawn() {
+      if (sparks.length >= maxActive) return;
+      const x = (Math.random() * bw) | 0;
+      const y = (Math.random() * bh) | 0;
+      const key = y * bw + x;
+      if (occupied.has(key)) return;      // 该格已亮，跳过（保持稀疏散布）
+      occupied.add(key);
+      sparks.push({
+        x: x, y: y, key: key,
+        c: COLORS[(Math.random() * COLORS.length) | 0],
+        life: 0,                                   // 0 -> 1 生命周期
+        rate: 0.018 + Math.random() * 0.045,       // 淡入淡出速度（越大越像爆闪）
+        peak: 0.45 + Math.random() * 0.5,          // 峰值亮度（高亮）
+      });
+    }
+
+    function draw() {
       ctx.clearRect(0, 0, W, H);
-      for (let y = 0; y < bh; y++) {
-        for (let x = 0; x < bw; x++) {
-          const cl = cells[y * bw + x];
-          // 慢呼吸 sin + 高频微闪 -> 像随机明灭的 LED
-          let v = 0.5 + 0.5 * Math.sin(t * cl.speed + cl.phase);
-          v = v * 0.7 + 0.3 * Math.abs(Math.sin(t * cl.speed * 2.7 + cl.phase * 1.7));
-          const a = cl.base * v;
-          if (a < 0.012) continue;
-          ctx.fillStyle = "rgba(" + cl.c[0] + "," + cl.c[1] + "," + cl.c[2] + "," + a.toFixed(3) + ")";
-          ctx.fillRect(x * GRID, y * GRID, GRID, GRID);
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const s = sparks[i];
+        s.life += s.rate;
+        if (s.life >= 1) {                          // 熄灭 -> 释放该格，等待别处重生
+          occupied.delete(s.key);
+          sparks.splice(i, 1);
+          continue;
         }
+        const a = s.peak * Math.sin(Math.PI * s.life);   // 平滑淡入淡出
+        if (a < 0.02) continue;
+        ctx.fillStyle = "rgba(" + s.c[0] + "," + s.c[1] + "," + s.c[2] + "," + a.toFixed(3) + ")";
+        ctx.fillRect(s.x * GRID, s.y * GRID, GRID, GRID);
       }
     }
 
-    let raf = null, last = 0;
+    let raf = null, last = 0, spawnAcc = 0;
     function loop(now) {
-      if (now - last < 50) { raf = requestAnimationFrame(loop); return; }  // 约 20fps，省电
+      if (now - last < 40) { raf = requestAnimationFrame(loop); return; }  // 约 25fps，省电
       last = now;
-      draw(now);
+      spawnAcc += SPAWN_PER_FRAME;
+      while (spawnAcc >= 1) { spawn(); spawnAcc -= 1; }
+      draw();
       raf = requestAnimationFrame(loop);
     }
     function start() { if (raf == null && !reduce) raf = requestAnimationFrame(loop); }
@@ -385,7 +403,7 @@
     window.addEventListener("resize", build);
     document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
     build();
-    if (reduce) draw(0); else start();
+    if (!reduce) start();   // reduced-motion 时保持全暗静止
   })();
 
   /* =========================================================
