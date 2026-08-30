@@ -58,8 +58,8 @@ a { color: inherit; }
   background-size: 28px 28px, 28px 28px, 120px 120px;
 }
 
-/* 鼠标跟随水波纹像素层 */
-.fx-canvas {
+/* 随机呼吸闪烁的像素颗粒背景层 */
+.grain-field {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -67,7 +67,7 @@ a { color: inherit; }
   pointer-events: none;
   z-index: 1;
   display: block;
-  opacity: 0.6;   /* 整体柔化，避免干扰阅读 */
+  opacity: 0.7;   /* 整体柔化，避免干扰阅读 */
 }
 
 /* ===================== 导航 ===================== */
