@@ -336,3 +336,22 @@ body.pixel-mode .lightbox__img { display: none; }
 
 /* 焦点可见性（a11y） */
 :focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+
+/* ===================== 投稿分类选择 ===================== */
+.submit-cat {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  margin: 0 0 18px; padding: 12px 14px;
+  background: var(--panel); border: var(--px) solid var(--line);
+}
+.submit-cat label {
+  font-family: var(--font-pixel); font-size: 11px; color: var(--ink);
+  letter-spacing: 1px;
+}
+.submit-cat select {
+  font-family: var(--font-grotesk); font-size: 14px; font-weight: 500;
+  color: var(--ink); background: var(--bg-soft);
+  border: var(--px) solid var(--line); padding: 8px 12px; cursor: pointer;
+}
+.submit-cat select:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.submit-cat__hint { font-size: 12px; color: var(--muted, #8a8f98); }
+@media (max-width: 640px) { .submit-cat__hint { width: 100%; } }
