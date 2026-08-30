@@ -1,9 +1,15 @@
 /**
  * POST /api/upload
- * 接收 multipart/form-data 的图片，写入绑定的 KV 命名空间（base64 + 元信息），
- * 返回可访问地址。绑定名：PIXEL_BUCKET
+ * 接收 multipart/form-data 图片，通过 Cloudflare KV REST API 写入命名空间。
+ * 凭据取自环境变量 env.CF_KV_TOKEN（已在项目设置中配置为 secret）。
  */
+const ACCT = "15e7bfc2475d3ac5e82b087b43b86aa9";
+const NS = "26a1a51ecec9466f8a4ecb2661bcd1b0";
+const KV = `https://api.cloudflare.com/client/v4/accounts/${ACCT}/storage/kv/namespaces/${NS}`;
+
 export async function onRequestPost({ request, env }) {
+  const token = env.CF_KV_TOKEN;
+  if (!token) return Response.json({ ok: false, error: "服务端未配置 KV 凭据" }, { status: 500 });
   try {
     const form = await request.formData();
     const file = form.get("file");
@@ -28,7 +34,12 @@ export async function onRequestPost({ request, env }) {
     }
     const b64 = btoa(bin);
     const value = JSON.stringify({ t: file.type, n: name, c: "投稿", d: b64 });
-    await env.PIXEL_BUCKET.put("img:" + id, value);
+    const r = await fetch(`${KV}/values/img:${id}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: value,
+    });
+    if (!r.ok) return Response.json({ ok: false, error: "KV 写入失败(" + r.status + ")" }, { status: 500 });
     return Response.json({ ok: true, id, url: "/api/asset/" + id, name, cat: "投稿" });
   } catch (e) {
     return Response.json({ ok: false, error: "服务器错误：" + (e && e.message ? e.message : e) }, { status: 500 });
